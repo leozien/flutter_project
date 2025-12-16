@@ -1,6 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'profile_page.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Untuk ambil User ID
+import 'package:cloud_firestore/cloud_firestore.dart'; // Untuk Data
+import '../services/firestore_service.dart';
 
 class EditProfilePage extends StatefulWidget {
   final VoidCallback? onSaved;
@@ -12,151 +14,280 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
-  late TextEditingController _nama;
-  late TextEditingController _email;
-  late TextEditingController _hp;
+  final FirestoreService _firestoreService = FirestoreService();
+  final User? currentUser = FirebaseAuth.instance.currentUser;
+
+  late TextEditingController _nameController;
+  late TextEditingController _phoneController;
+
+  String _selectedAvatarUrl =
+      "https://api.dicebear.com/7.x/avataaars/png?seed=Felix"; // Default
+  bool _isLoading = false;
+
+  // Daftar Pilihan Avatar Keren (DiceBear API)
+  final List<String> _avatarOptions = [
+    "https://api.dicebear.com/7.x/avataaars/png?seed=Felix",
+    "https://api.dicebear.com/7.x/avataaars/png?seed=Aneka",
+    "https://api.dicebear.com/7.x/avataaars/png?seed=Zoe",
+    "https://api.dicebear.com/7.x/avataaars/png?seed=Jack",
+    "https://api.dicebear.com/7.x/avataaars/png?seed=Bella",
+    "https://api.dicebear.com/7.x/avataaars/png?seed=Coco",
+    "https://api.dicebear.com/7.x/adventurer/png?seed=Gizmo",
+    "https://api.dicebear.com/7.x/adventurer/png?seed=Nala",
+  ];
 
   @override
   void initState() {
     super.initState();
-    _nama = TextEditingController(text: globalName);
-    _email = TextEditingController(text: globalEmail);
-    _hp = TextEditingController(text: globalHP);
+    _nameController = TextEditingController();
+    _phoneController = TextEditingController();
+    _loadUserData();
+  }
+
+  void _loadUserData() async {
+    if (currentUser == null) return;
+
+    // Ambil data dari Firestore
+    var doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser!.uid)
+        .get();
+
+    if (doc.exists && mounted) {
+      var data = doc.data() as Map<String, dynamic>;
+      setState(() {
+        _nameController.text = data['name'] ?? '';
+        _phoneController.text = data['phone'] ?? '';
+        _selectedAvatarUrl = data['photoUrl'] ?? _selectedAvatarUrl;
+      });
+    } else {
+      // Jika belum ada data, isi default dari Auth
+      _nameController.text = currentUser!.displayName ?? "Member Baru";
+      _phoneController.text = "";
+    }
   }
 
   @override
   void dispose() {
-    _nama.dispose();
-    _email.dispose();
-    _hp.dispose();
+    _nameController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
-  ButtonStyle buttonStyle() {
-    return ElevatedButton.styleFrom(
-      backgroundColor: Colors.white.withOpacity(0.85),
-      foregroundColor: Colors.black87,
-      minimumSize: const Size(double.infinity, 50),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    );
+  void _saveProfile() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isLoading = true);
+
+      await _firestoreService.updateUserProfile(
+        uid: currentUser!.uid,
+        email: currentUser!.email,
+        name: _nameController.text,
+        phone: _phoneController.text,
+        photoUrl: _selectedAvatarUrl,
+      );
+
+      if (widget.onSaved != null) widget.onSaved!();
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text("Profil berhasil diperbarui!"),
+              backgroundColor: Colors.green),
+        );
+        Navigator.pop(context);
+      }
+    }
   }
 
-  InputDecoration inputTheme(String label, IconData icon) {
-    return InputDecoration(
-      filled: true,
-      fillColor: Colors.white.withOpacity(0.18),
-      prefixIcon: Icon(icon, color: Colors.white),
-      labelText: label,
-      labelStyle: const TextStyle(color: Colors.white70),
-      enabledBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: Colors.white.withOpacity(.30)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.white),
-        borderRadius: BorderRadius.circular(12),
-      ),
+  // --- MODAL PILIH AVATAR ---
+  void _showAvatarPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Pilih Avatar Anda",
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: 200,
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                  ),
+                  itemCount: _avatarOptions.length,
+                  itemBuilder: (ctx, index) {
+                    final url = _avatarOptions[index];
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedAvatarUrl = url);
+                        Navigator.pop(ctx);
+                      },
+                      child: CircleAvatar(
+                        backgroundImage: NetworkImage(url),
+                        backgroundColor: Colors.grey[800],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // Hapus variabel unused 'bgColor'
+    const textColor = Colors.white;
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text("Edit Profil"),
-        backgroundColor: Colors.black.withOpacity(.25),
+        title: const Text("Edit Profil", style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.black.withValues(alpha: 0.5),
         elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Stack(
         children: [
-          // background image
-          Positioned.fill(
-            child: Image.asset("assets/leozien.jpeg", fit: BoxFit.cover),
+          // Background
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.black, Color(0xFF121212)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
           ),
-
-          Container(color: Colors.black.withOpacity(0.45)),
 
           Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 100),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(24),
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(32),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(.12),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: Colors.white.withOpacity(.3)),
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.1)),
                     ),
                     child: Form(
                       key: _formKey,
                       child: Column(
                         children: [
-                          const CircleAvatar(
-                            radius: 45,
-                            backgroundColor: Colors.white,
-                            child: Icon(Icons.person,
-                                color: Colors.black, size: 55),
+                          // --- AVATAR SELECTOR ---
+                          Stack(
+                            children: [
+                              CircleAvatar(
+                                radius: 55,
+                                backgroundColor: Colors.white12,
+                                backgroundImage:
+                                    NetworkImage(_selectedAvatarUrl),
+                              ),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: GestureDetector(
+                                  onTap: _showAvatarPicker,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.blueAccent,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.edit,
+                                        color: Colors.white, size: 20),
+                                  ),
+                                ),
+                              )
+                            ],
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 10),
+                          const Text("Ketuk ikon pensil untuk ganti foto",
+                              style: TextStyle(
+                                  color: Colors.white54, fontSize: 12)),
+
+                          const SizedBox(height: 30),
+
+                          // Input Nama
                           TextFormField(
-                            controller: _nama,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: inputTheme("Nama", Icons.person),
+                            controller: _nameController,
+                            style: const TextStyle(color: textColor),
+                            decoration:
+                                _inputDecor("Nama Lengkap", Icons.person),
                             validator: (v) =>
                                 v!.isEmpty ? "Nama wajib diisi" : null,
                           ),
-                          const SizedBox(height: 15),
+                          const SizedBox(height: 20),
+
+                          // Input HP
                           TextFormField(
-                            controller: _email,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: inputTheme("Email", Icons.email),
-                            validator: (v) =>
-                                v!.isEmpty ? "Email wajib diisi" : null,
-                          ),
-                          const SizedBox(height: 15),
-                          TextFormField(
-                            controller: _hp,
-                            style: const TextStyle(color: Colors.white),
+                            controller: _phoneController,
+                            style: const TextStyle(color: textColor),
                             keyboardType: TextInputType.phone,
-                            decoration: inputTheme("Nomor HP", Icons.phone),
-                            validator: (v) =>
-                                v!.isEmpty ? "Nomor HP wajib diisi" : null,
+                            decoration:
+                                _inputDecor("Nomor WhatsApp", Icons.phone),
                           ),
-                          const SizedBox(height: 25),
-                          ElevatedButton(
-                            style: buttonStyle(),
-                            onPressed: () {
-                              if (_formKey.currentState!.validate()) {
-                                globalName = _nama.text;
-                                globalEmail = _email.text;
-                                globalHP = _hp.text;
-                                widget.onSaved?.call();
 
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content:
-                                          Text("Profil berhasil diperbarui!")),
-                                );
-
-                                Navigator.pop(context);
-                              }
-                            },
-                            child: const Text("Simpan",
-                                style: TextStyle(fontSize: 16)),
-                          ),
                           const SizedBox(height: 10),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text(
-                              "Batal",
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 14),
+                          // Email Read Only
+                          TextFormField(
+                            initialValue: currentUser?.email,
+                            readOnly: true,
+                            style: const TextStyle(color: Colors.white54),
+                            decoration:
+                                _inputDecor("Email", Icons.email).copyWith(
+                              fillColor: Colors.black.withValues(alpha: 0.3),
                             ),
-                          )
+                          ),
+
+                          const SizedBox(height: 30),
+
+                          // Tombol Simpan
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _saveProfile,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: Colors.black,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Text("SIMPAN PERUBAHAN",
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -166,6 +297,24 @@ class _EditProfilePageState extends State<EditProfilePage> {
             ),
           )
         ],
+      ),
+    );
+  }
+
+  InputDecoration _inputDecor(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: Colors.white70),
+      labelStyle: const TextStyle(color: Colors.white60),
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.05),
+      enabledBorder: OutlineInputBorder(
+        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderSide: const BorderSide(color: Colors.white),
+        borderRadius: BorderRadius.circular(12),
       ),
     );
   }

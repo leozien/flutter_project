@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/app_state.dart';
 import 'edit_profile_page.dart';
-import 'admin_dashboard.dart'; // PENTING: Import Dashboard Admin agar bisa dinavigasi
+// Tidak perlu import admin_dashboard.dart karena kita pakai route '/admin'
 
 // Data global sementara (bisa dipindah ke database nanti)
 String globalName = "Pengguna Baru";
@@ -23,15 +23,16 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Cek apakah user login DAN apakah dia admin
-    // Pastikan di model AppState kamu ada variable 'isAdmin'
-    // Jika belum ada, ganti baris ini menjadi: bool isAdmin = appState.value.isLoggedIn;
-    bool isAdmin = appState.value.isLoggedIn && appState.value.isAdmin;
+    // Kita cek role dari currentUser di AppState
+    final user = appState.value.currentUser;
+    bool isAdmin = user != null && user.role == 'admin';
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text("Profil"),
-        backgroundColor: Colors.black.withOpacity(0.3),
+        // Fix: withOpacity -> withValues
+        backgroundColor: Colors.black.withValues(alpha: 0.3),
         elevation: 0,
         foregroundColor: Colors.white,
       ),
@@ -48,7 +49,8 @@ class ProfilePage extends StatelessWidget {
           ),
           // Overlay Gelap
           Container(
-            color: Colors.black.withOpacity(0.45),
+            // Fix: withOpacity -> withValues
+            color: Colors.black.withValues(alpha: 0.45),
           ),
 
           // MAIN UI
@@ -66,7 +68,7 @@ class ProfilePage extends StatelessWidget {
 
                 // Nama User / Label Admin
                 Text(
-                  isAdmin ? "ADMINISTRATOR" : globalName,
+                  isAdmin ? "ADMINISTRATOR" : (user?.email ?? globalName),
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -85,36 +87,33 @@ class ProfilePage extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.14),
+                        // Fix: withOpacity -> withValues
+                        color: Colors.white.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: Colors.white30),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          itemTile("Email", globalEmail),
-                          itemTile("Nomor HP", globalHP),
+                          itemTile("Email", user?.email ?? globalEmail),
+                          itemTile("Nomor HP", globalHP), // Masih dummy jika belum ada di user model
                           const Divider(color: Colors.white30, height: 28),
 
                           // --- FITUR KHUSUS ADMIN ---
                           if (isAdmin) ...[
                             ElevatedButton.icon(
                               onPressed: () {
-                                // NAVIGASI KE ADMIN DASHBOARD (List Produk)
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const AdminDashboard(),
-                                  ),
-                                );
+                                // ✅ FIX: Gunakan pushNamed ke '/admin'
+                                Navigator.pushNamed(context, '/admin');
                               },
                               icon: const Icon(Icons.inventory_2),
                               label: const Text("Kelola Katalog Produk"),
                               style: buttonStyle().copyWith(
+                                // Fix: MaterialStateProperty -> WidgetStateProperty
                                 backgroundColor:
-                                    MaterialStateProperty.all(Colors.redAccent),
+                                    WidgetStateProperty.all(Colors.redAccent),
                                 foregroundColor:
-                                    MaterialStateProperty.all(Colors.white),
+                                    WidgetStateProperty.all(Colors.white),
                               ),
                             ),
                             const SizedBox(height: 15),
@@ -127,7 +126,7 @@ class ProfilePage extends StatelessWidget {
                               final wishlistIds = appState.value.wishlist;
                               final message = wishlistIds.isEmpty
                                   ? 'Wishlist kosong'
-                                  : 'Wishlist: ${wishlistIds.join(', ')}';
+                                  : 'Wishlist: ${wishlistIds.length} Item';
 
                               ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(content: Text(message)));
@@ -165,7 +164,8 @@ class ProfilePage extends StatelessWidget {
                               margin: const EdgeInsets.only(top: 10),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(8),
-                                color: Colors.redAccent.withOpacity(.3),
+                                // Fix: withOpacity -> withValues
+                                color: Colors.redAccent.withValues(alpha: 0.3),
                                 border: Border.all(color: Colors.redAccent),
                               ),
                               child: const Row(
@@ -220,7 +220,8 @@ class ProfilePage extends StatelessWidget {
 
   ButtonStyle buttonStyle() {
     return ElevatedButton.styleFrom(
-      backgroundColor: Colors.white.withOpacity(0.8),
+      // Fix: withOpacity -> withValues
+      backgroundColor: Colors.white.withValues(alpha: 0.8),
       foregroundColor: Colors.black87,
       minimumSize: const Size(double.infinity, 50),
       shape: RoundedRectangleBorder(

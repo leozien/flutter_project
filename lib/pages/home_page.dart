@@ -5,11 +5,12 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/app_state.dart';
 import '../models/product.dart';
-import '../pages/detail_dialog.dart'; // Pastikan file ini sudah diisi kode baru di atas
+import '../pages/detail_dialog.dart';
 import '../pages/cart_page.dart';
 import '../pages/login_page.dart';
 import '../pages/register_page.dart';
 import '../data/dummy_products.dart';
+import '../services/firestore_service.dart'; // ✅ Import Service Firebase
 
 class HomePage extends StatefulWidget {
   final ValueNotifier<AppState> appState;
@@ -32,8 +33,12 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+  // ✅ 1. Inisialisasi Service Firestore
+  final FirestoreService _firestoreService = FirestoreService();
+
   String searchQuery = '';
   bool _isDarkMode = true;
+  String _sortOrder = 'none';
 
   late AnimationController _controller;
   late Animation<double> fadeAnimation;
@@ -41,21 +46,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late AnimationController popupController;
   late Animation<double> scaleAnimation;
 
+  final ScrollController _scrollController = ScrollController();
+
   bool contactOpen = false;
-  bool adminOnline = true; // Status simulasi admin online
+  bool adminOnline = true;
 
   final List<String> promoImages = [
     "assets/pro1.jpeg",
     "assets/pro2.jpeg",
-    "assets/pro3.jpeg",
+    "assets/promo5.jpeg",
     "assets/pro4.jpeg",
+    "assets/promo6.jpeg",
   ];
 
   @override
   void initState() {
     super.initState();
     _isDarkMode = widget.appState.value.isDarkMode;
-    widget.productManager.productsNotifier.addListener(_onProductsChanged);
 
     _controller = AnimationController(
       vsync: this,
@@ -75,14 +82,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    widget.productManager.productsNotifier.removeListener(_onProductsChanged);
     _controller.dispose();
     popupController.dispose();
+    _scrollController.dispose();
     super.dispose();
-  }
-
-  void _onProductsChanged() {
-    setState(() {});
   }
 
   void _toggleTheme() {
@@ -93,18 +96,89 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
-  List<Product> get filteredProducts {
-    final List<Product> currentProducts =
-        widget.productManager.productsNotifier.value;
-    final q = searchQuery.trim().toLowerCase();
-    if (q.isEmpty) return currentProducts;
-
-    return currentProducts
-        .where((p) => p.name.toLowerCase().contains(q))
-        .toList();
+  // --- FUNGSI URL LAUNCHER ---
+  void _launchWhatsAppNumber(String number, String message) async {
+    final Uri url =
+        Uri.parse("https://wa.me/$number?text=${Uri.encodeComponent(message)}");
+    try {
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        debugPrint("Gagal membuka WhatsApp");
+      }
+    } catch (e) {
+      debugPrint("Error membuka WhatsApp: $e");
+    }
   }
 
-  // --- FUNGSI NAVIGASI ---
+  void _launchInstagram(String username) async {
+    final Uri url = Uri.parse("https://instagram.com/$username");
+    try {
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        debugPrint("Gagal membuka Instagram");
+      }
+    } catch (e) {
+      debugPrint("Error membuka Instagram: $e");
+    }
+  }
+
+  void _launchWhatsAppWithMessage(String message) async {
+    _launchWhatsAppNumber("6282341361739", message);
+  }
+
+  // --- UI SORT DIALOG ---
+  void _showSortDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Urutkan Harga",
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: _isDarkMode ? Colors.white : Colors.black),
+              ),
+              const SizedBox(height: 16),
+              _buildSortOption('Paling Sesuai (Default)', 'none'),
+              _buildSortOption('Harga Termurah ⬇️', 'lowest'),
+              _buildSortOption('Harga Termahal ⬆️', 'highest'),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSortOption(String title, String value) {
+    final isSelected = _sortOrder == value;
+    final textColor = _isDarkMode ? Colors.white : Colors.black;
+
+    return ListTile(
+      title: Text(title,
+          style: TextStyle(
+            color: isSelected ? Colors.blueAccent : textColor,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          )),
+      trailing:
+          isSelected ? const Icon(Icons.check, color: Colors.blueAccent) : null,
+      onTap: () {
+        setState(() {
+          _sortOrder = value;
+        });
+        Navigator.pop(context);
+      },
+    );
+  }
+
+  // --- FUNGSI NAVIGASI & LOGOUT ---
   void _openUserDashboard() {
     Navigator.pushNamed(context, '/user_dashboard');
   }
@@ -133,16 +207,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
 
     if (keluar == true) {
-      // Set user null dan refresh state
       widget.appState.value.currentUser = null;
       widget.onAppStateChanged();
-
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (context) => LoginPage(
             appState: widget.appState,
-            products: widget.productManager.productsNotifier.value,
+            products: [],
             onAppStateChanged: widget.onAppStateChanged,
             currency: widget.currency,
             productManager: widget.productManager,
@@ -158,7 +231,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       MaterialPageRoute(
         builder: (context) => LoginPage(
           appState: widget.appState,
-          products: widget.productManager.productsNotifier.value,
+          products: [],
           onAppStateChanged: widget.onAppStateChanged,
           currency: widget.currency,
           productManager: widget.productManager,
@@ -171,10 +244,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => RegisterPage(
-          // FIX: Sekarang RegisterPage menerima appState sesuai perbaikan langkah 3
-          appState: widget.appState,
-        ),
+        builder: (context) => RegisterPage(appState: widget.appState),
       ),
     );
   }
@@ -190,69 +260,380 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
       ),
     );
-    // Refresh UI setelah kembali dari keranjang (jika ada item dihapus)
     if (mounted) setState(() {});
   }
 
-  // Fungsi Helper URL Launcher
-  void _launchWhatsAppWithMessage(String message) async {
-    final Uri url = Uri.parse(
-        "https://wa.me/6282341361739?text=${Uri.encodeComponent(message)}");
-    try {
-      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-        debugPrint("Gagal membuka WhatsApp");
-      }
-    } catch (e) {
-      debugPrint("Error membuka WhatsApp: $e");
-    }
+  void _showPrivacyPolicy() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Kebijakan Privasi"),
+        content: const SingleChildScrollView(
+          child: Text(
+              "Data Anda aman bersama kami. Kami tidak membagikan data ke pihak ketiga."),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Tutup"),
+          )
+        ],
+      ),
+    );
   }
 
-  void _launchWhatsAppNumber(String number, String message) async {
-    final Uri url =
-        Uri.parse("https://wa.me/$number?text=${Uri.encodeComponent(message)}");
-    try {
-      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-        debugPrint("Gagal membuka WhatsApp");
-      }
-    } catch (e) {
-      debugPrint("Error membuka WhatsApp: $e");
-    }
+  void _showRedeemDialog() {
+    final TextEditingController codeController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+        title: Text("Tukar Voucher",
+            style: TextStyle(
+                color: _isDarkMode ? Colors.white : Colors.black,
+                fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "Masukkan kode unik untuk mendapatkan promo spesial.",
+              style: TextStyle(
+                  color: _isDarkMode ? Colors.white70 : Colors.black54,
+                  fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: codeController,
+              style:
+                  TextStyle(color: _isDarkMode ? Colors.white : Colors.black),
+              decoration: InputDecoration(
+                hintText: "Contoh: LEOZIEN",
+                hintStyle: TextStyle(
+                    color: _isDarkMode ? Colors.white30 : Colors.black38),
+                filled: true,
+                fillColor: _isDarkMode ? Colors.white10 : Colors.grey.shade200,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text("Batal",
+                style: TextStyle(
+                    color: _isDarkMode ? Colors.white54 : Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+            onPressed: () {
+              Navigator.pop(ctx);
+
+              // 🔒 DAFTAR KODE VALID
+              const List<String> validCodes = [
+                "LEOZIEN8080",
+                "LUNCTORIUM0808",
+                "LUNCLEOZIEN8080"
+              ];
+              String inputCode = codeController.text.trim().toUpperCase();
+
+              if (validCodes.contains(inputCode)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content:
+                        Text("🎉 Kode '$inputCode' Berhasil! Potongan aktif."),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("❌ Kode tidak valid atau sudah kadaluarsa."),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child:
+                const Text("Tukar Kode", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
-  void _launchInstagram(String username) async {
-    final Uri url = Uri.parse("https://instagram.com/$username");
-    try {
-      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-        debugPrint("Gagal membuka Instagram");
-      }
-    } catch (e) {
-      debugPrint("Error membuka Instagram: $e");
-    }
+  // --- DRAWER MENU ---
+  Widget _buildDrawer(BuildContext context) {
+    final bool isLoggedIn = widget.appState.value.isLoggedIn;
+    final bool dark = _isDarkMode;
+
+    return Drawer(
+      backgroundColor: dark ? const Color(0xFF121212) : Colors.white,
+      child: Column(
+        children: [
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 50, 20, 20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: dark
+                      ? [Colors.black, const Color(0xFF1E1E1E)]
+                      : [Colors.white, Colors.grey.shade100],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: isLoggedIn
+                  ? _buildLoggedInDrawerContent()
+                  : _buildGuestDrawerContent(),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: dark ? const Color(0xFF0D0D0D) : Colors.grey.shade50,
+              border: Border(
+                  top: BorderSide(
+                      color: dark ? Colors.white10 : Colors.black12)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Punya kode unik?",
+                  style: TextStyle(
+                      color: dark ? Colors.white54 : Colors.black54,
+                      fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _showRedeemDialog,
+                    icon: const Icon(Icons.card_giftcard,
+                        color: Colors.blueAccent),
+                    label: const Text("Tukar Kode Voucher"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blueAccent,
+                      side: const BorderSide(color: Colors.blueAccent),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
   }
 
-  // Bottom Sheet Options
+  Widget _buildBenefitItem(IconData icon, String text, Color textColor) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.orangeAccent, size: 24),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(color: textColor, fontSize: 14),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSocialIcons() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          const Text("Ikuti Kami:",
+              style: TextStyle(fontSize: 12, color: Colors.grey)),
+          const SizedBox(width: 10),
+          InkWell(
+            onTap: () => _launchWhatsAppNumber("6282341361739", "Halo Admin"),
+            child: Image.asset('assets/whatsap.png', width: 28, height: 28),
+          ),
+          const SizedBox(width: 15),
+          InkWell(
+            onTap: () => _launchInstagram("leozienmarket.id"),
+            child: Image.asset('assets/instagram.png', width: 28, height: 28),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGuestDrawerContent() {
+    final dark = _isDarkMode;
+    final textColor = dark ? Colors.white : Colors.black;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Icon(Icons.stars, color: Colors.orangeAccent, size: 32),
+            IconButton(
+              icon: Icon(Icons.close, color: textColor),
+              onPressed: () => Navigator.pop(context),
+            )
+          ],
+        ),
+        const SizedBox(height: 20),
+        Text(
+          "Gabung Leozien\nMarket Sekarang!",
+          style: TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
+            color: textColor,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 30),
+        _buildBenefitItem(
+            Icons.flash_on,
+            "Jadilah Sultan pertama yang mendapatkan promo menarik!",
+            textColor),
+        const SizedBox(height: 16),
+        _buildBenefitItem(
+            Icons.history, "Pantau histori pembelian tanpa ribet.", textColor),
+        const SizedBox(height: 16),
+        _buildBenefitItem(
+            Icons.security, "Transaksi secepat kilat & 100% Aman.", textColor),
+        const Spacer(),
+        _buildSocialIcons(),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _register();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text("Daftar sekarang, gratis",
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _login();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: dark ? Colors.white10 : Colors.grey.shade200,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text("Masuk",
+                style:
+                    TextStyle(color: textColor, fontWeight: FontWeight.bold)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoggedInDrawerContent() {
+    final user = widget.appState.value.currentUser;
+    final dark = _isDarkMode;
+    final textColor = dark ? Colors.white : Colors.black;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 35,
+          backgroundColor: dark ? Colors.white10 : Colors.grey.shade300,
+          child: Icon(Icons.person, size: 40, color: textColor),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          "Halo, ${user?.email ?? 'Member'}",
+          style: TextStyle(
+              fontSize: 20, fontWeight: FontWeight.bold, color: textColor),
+        ),
+        const SizedBox(height: 4),
+        Text("Member Setia Leozien",
+            style: TextStyle(color: textColor.withValues(alpha: 0.7))),
+        const SizedBox(height: 30),
+        const Divider(),
+        ListTile(
+          leading: Icon(Icons.dashboard, color: textColor),
+          title: Text("Dasbor Saya", style: TextStyle(color: textColor)),
+          onTap: () {
+            Navigator.pop(context);
+            if (widget.appState.value.isAdmin) {
+              _openAdminPage();
+            } else {
+              _openUserDashboard();
+            }
+          },
+        ),
+        ListTile(
+          leading: Icon(Icons.shopping_cart, color: textColor),
+          title: Text("Keranjang", style: TextStyle(color: textColor)),
+          onTap: () {
+            Navigator.pop(context);
+            _openCart();
+          },
+        ),
+        _buildSocialIcons(),
+        ListTile(
+          leading: const Icon(Icons.logout, color: Colors.redAccent),
+          title:
+              const Text("Keluar", style: TextStyle(color: Colors.redAccent)),
+          onTap: () {
+            Navigator.pop(context);
+            _logout();
+          },
+        ),
+      ],
+    );
+  }
+
+  // --- MENU BENGKEL & REKBER ---
   void _showBengkelOptions() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.black87,
+      backgroundColor: _isDarkMode ? Colors.black87 : Colors.white,
       builder: (context) {
+        final textColor = _isDarkMode ? Colors.white : Colors.black;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16.0),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
               child: Text(
                 "⚙️ Bengkel Mobile Legend",
                 style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white),
+                    color: textColor),
               ),
             ),
             ListTile(
               leading: const Icon(Icons.email, color: Colors.blueAccent),
-              title: const Text("Ganti Email ML (KHUSUS NO KGM)",
-                  style: TextStyle(color: Colors.white)),
+              title: Text("Ganti Email ML (KHUSUS NO KGM)",
+                  style: TextStyle(color: textColor)),
               onTap: () {
                 Navigator.pop(context);
                 _launchWhatsAppWithMessage(
@@ -261,8 +642,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
             ListTile(
               leading: const Icon(Icons.security, color: Colors.redAccent),
-              title: const Text("Logout All Device (KONTAK GM)",
-                  style: TextStyle(color: Colors.white)),
+              title: Text("Logout All Device (KONTAK GM)",
+                  style: TextStyle(color: textColor)),
               onTap: () {
                 Navigator.pop(context);
                 _launchWhatsAppWithMessage(
@@ -279,25 +660,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _showRekberOptions() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.black87,
+      backgroundColor: _isDarkMode ? Colors.black87 : Colors.white,
       builder: (context) {
+        final textColor = _isDarkMode ? Colors.white : Colors.black;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16.0),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
               child: Text(
                 "🤝 Rekening Bersama (REKBER)",
                 style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.white),
+                    color: textColor),
               ),
             ),
             ListTile(
               leading: const Icon(Icons.chat, color: Colors.greenAccent),
-              title: const Text("Admin 1 (LEOZIEN)",
-                  style: TextStyle(color: Colors.white)),
+              title:
+                  Text("Admin 1 (LEOZIEN)", style: TextStyle(color: textColor)),
               onTap: () {
                 Navigator.pop(context);
                 _launchWhatsAppNumber("6282341361739",
@@ -306,8 +688,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
             ListTile(
               leading: const Icon(Icons.chat, color: Colors.greenAccent),
-              title: const Text("Admin 2 (LOURIENT)",
-                  style: TextStyle(color: Colors.white)),
+              title: Text("Admin 2 (LOURIENT)",
+                  style: TextStyle(color: textColor)),
               onTap: () {
                 Navigator.pop(context);
                 _launchWhatsAppNumber("628819881157",
@@ -321,26 +703,45 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildFooter(Color primaryTextColor, Color iconColor) {
+  // --- FOOTER ---
+  Widget _buildFooterLink(String text, VoidCallback onTap, Color color) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4.0),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: color.withValues(alpha: 0.7),
+            fontSize: 13,
+            decoration: TextDecoration.underline,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooter(Color primaryTextColor, Color secondaryTextColor) {
+    final footerBg = _isDarkMode ? Colors.black : const Color(0xFFF5F5F5);
+    final footerText = _isDarkMode ? Colors.white : Colors.black87;
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 16),
       width: double.infinity,
-      color: Colors.black.withOpacity(0.9),
+      color: footerBg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             "LEOZIEN MARKET",
             style: TextStyle(
-                fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+                fontSize: 22, fontWeight: FontWeight.bold, color: footerText),
           ),
           const SizedBox(height: 10),
-          const Text(
-            "LEOZIEN MARKET ADALAH TEMPAT JUAL BELI AKUN MLBB AMAN, MURAH dan TERPERCAYA. Proses cepat. Layanan 24 jam.",
-            style: TextStyle(color: Colors.white70),
+          Text(
+            "TEMPAT JUAL BELI AKUN MLBB AMAN & TERPERCAYA. LAYANAN 24 JAM.",
+            style: TextStyle(color: footerText.withValues(alpha: 0.7)),
           ),
-          const SizedBox(height: 20),
-          const Divider(color: Colors.white24),
           const SizedBox(height: 20),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -349,83 +750,52 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Peta Situs",
+                  Text("Menu",
                       style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: primaryTextColor)),
+                          fontWeight: FontWeight.bold, color: footerText)),
                   const SizedBox(height: 8),
-                  const Text("Beranda",
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  const Text("Cek Transaksi",
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  const Text("Hubungi Kami",
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  _buildFooterLink("Beranda", () {
+                    _scrollController.animateTo(0,
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeInOut);
+                  }, footerText),
+                  _buildFooterLink("Keranjang", _openCart, footerText),
                 ],
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Dukungan",
+                  Text("Bantuan",
                       style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: primaryTextColor)),
+                          fontWeight: FontWeight.bold, color: footerText)),
                   const SizedBox(height: 8),
-                  const Text("Whatsapp",
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  const Text("Instagram",
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  _buildFooterLink("Hubungi Admin", () {
+                    _launchWhatsAppNumber(
+                        "6282341361739", "Halo Admin, saya butuh bantuan");
+                  }, footerText),
+                  _buildFooterLink("Instagram", () {
+                    _launchInstagram("leozienmarket.id");
+                  }, footerText),
                 ],
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Legalitas",
+                  Text("Info",
                       style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: primaryTextColor)),
+                          fontWeight: FontWeight.bold, color: footerText)),
                   const SizedBox(height: 8),
-                  const Text("Kebijakan Privasi",
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
-                  const Text("Syarat & Ketentuan",
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  _buildFooterLink("Privasi", _showPrivacyPolicy, footerText),
                 ],
               ),
             ],
           ),
           const SizedBox(height: 30),
-          Text("Ikuti Kami",
-              style: TextStyle(
-                  fontWeight: FontWeight.bold, color: primaryTextColor)),
-          Row(
-            children: [
-              SizedBox(
-                width: 40,
-                height: 40,
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  icon:
-                      Image.asset('assets/wa.jpeg', width: 28.0, height: 28.0),
-                  onPressed: () =>
-                      _launchWhatsAppNumber("628819881157", "Halo!"),
-                ),
-              ),
-              SizedBox(
-                width: 40,
-                height: 40,
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  icon:
-                      Image.asset('assets/ig.jpeg', width: 28.0, height: 28.0),
-                  onPressed: () => _launchInstagram("leozienmarket.id"),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          const Center(
+          Center(
             child: Text(
               "© 2025 LEOZIEN MARKET. All Rights Reserved.",
-              style: TextStyle(color: Colors.white54, fontSize: 12),
+              style: TextStyle(
+                  color: footerText.withValues(alpha: 0.5), fontSize: 12),
             ),
           )
         ],
@@ -433,25 +803,72 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  // 🔥 FUNGSI BARU UNTUK TOMBOL KOTAK (PILL) DENGAN WARNA DINAMIS
+  Widget _buildActionButton(
+      String text, VoidCallback onTap, Color bgColor, Color textColor) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+        decoration: BoxDecoration(
+          color: bgColor, // Warna background dinamis (Putih/Hitam)
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            // Shadow tipis agar terlihat timbul
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            )
+          ],
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: textColor, // Warna teks dinamis (Hitam/Putih)
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final Color primaryTextColor = _isDarkMode ? Colors.white : Colors.black;
-    final Color iconColor = _isDarkMode ? Colors.white70 : Colors.black87;
-    final Color cardColor = _isDarkMode
-        ? Colors.white.withOpacity(0.12)
-        : Colors.black.withOpacity(0.05);
-    final Color searchBarFillColor =
-        _isDarkMode ? Colors.grey[800]! : Colors.white;
-    final Color searchBarHintColor =
-        _isDarkMode ? Colors.white54 : Colors.grey[600]!;
-    final Color searchBarBorderColor =
-        _isDarkMode ? Colors.white30 : Colors.grey[400]!;
+    // Definisi Warna Tema Monokrom (Hitam/Putih)
+    final bool darkMode = _isDarkMode;
 
+    // Background Utama
+    final Color backgroundColor = darkMode ? Colors.black : Colors.white;
+
+    // Warna Teks
+    final Color primaryTextColor = darkMode ? Colors.white : Colors.black87;
+    final Color secondaryTextColor = darkMode ? Colors.white70 : Colors.black54;
+
+    // Warna Card/Elemen
+    final Color cardColor = darkMode
+        ? const Color(0xFF1A1A1A) // Hitam sedikit terang
+        : Colors.white;
+
+    // Warna AppBar & SearchBar
+    final Color appBarColor = darkMode ? Colors.black : Colors.white;
+    final Color searchBarFill =
+        darkMode ? Colors.white.withValues(alpha: 0.1) : Colors.grey.shade100;
+    final Color iconColor = darkMode ? Colors.white : Colors.black;
+
+    // 🔥 WARNA TOMBOL DINAMIS (REKBER & BENGKEL)
+    // Jika Dark Mode (BG Hitam) -> Tombol Putih
+    // Jika Light Mode (BG Putih) -> Tombol Hitam
+    final Color actionBtnColor = darkMode ? Colors.white : Colors.black;
+    final Color actionBtnTextColor = darkMode ? Colors.black : Colors.white;
+
+    // Pesan sapaan
     String today = DateFormat('EEEE, d MMMM y', 'id_ID').format(DateTime.now());
     String greetingHour = DateFormat('HH').format(DateTime.now()).toString();
     String welcomeMessage;
     int hour = int.tryParse(greetingHour) ?? 0;
-
     if (hour >= 5 && hour < 12) {
       welcomeMessage = "Selamat Pagi! ☀️";
     } else if (hour >= 12 && hour < 18) {
@@ -461,72 +878,81 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      extendBodyBehindAppBar: false,
+      drawer: _buildDrawer(context),
+
+      // --- HEADER TETAP (APPBAR) ---
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: appBarColor,
         elevation: 0,
-        centerTitle: true,
-        title: Text(
-          "𝐋𝐄𝐎𝐙𝐈𝐄𝐍 𝐌𝐀𝐑𝐊𝐄𝐓",
-          style: TextStyle(
-            color: primaryTextColor,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
+        titleSpacing: 0,
+        // Gunakan iconTheme agar tombol back/drawer mengikuti warna tema
+        iconTheme: IconThemeData(color: iconColor),
+
+        // TITLE BERISI ROW: TEKS + SEARCH BAR
+        title: Row(
+          children: [
+            // 1. Teks "LEOZIEN"
+            Text(
+              "LEOZIEN",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: primaryTextColor, // Ikuti tema
+              ),
+            ),
+            const SizedBox(width: 10),
+
+            // 2. Search Bar
+            Expanded(
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: searchBarFill,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: TextField(
+                  // Menambahkan cursorColor agar kursor terlihat di background putih/hitam
+                  cursorColor: primaryTextColor,
+                  style: TextStyle(color: primaryTextColor, fontSize: 14),
+                  textAlignVertical: TextAlignVertical.center,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: "Cari...",
+                    hintStyle: TextStyle(
+                        color: darkMode ? Colors.white54 : Colors.black38),
+                    prefixIcon: Icon(Icons.search,
+                        color: darkMode ? Colors.white54 : Colors.black38,
+                        size: 20),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  onChanged: (v) => setState(() => searchQuery = v),
+                ),
+              ),
+            ),
+          ],
         ),
+
+        // 3. Tombol Kanan (Cart & Dark Mode)
         actions: [
           IconButton(
-              icon: Icon(Icons.shopping_cart, color: iconColor),
-              onPressed: _openCart),
-          IconButton(
-            icon: Icon(_isDarkMode ? Icons.light_mode : Icons.dark_mode,
-                color: iconColor),
-            onPressed: _toggleTheme,
+            icon: Icon(Icons.shopping_cart, color: iconColor),
+            onPressed: _openCart,
+            tooltip: 'Keranjang',
           ),
-          if (widget.appState.value.isLoggedIn) ...[
-            if (widget.appState.value.isAdmin)
-              IconButton(
-                icon: const Icon(Icons.admin_panel_settings,
-                    color: Colors.redAccent),
-                tooltip: 'Halaman Admin',
-                onPressed: _openAdminPage,
-              )
-            else
-              IconButton(
-                icon: Icon(Icons.dashboard, color: iconColor),
-                tooltip: 'Dasbor Pengguna',
-                onPressed: _openUserDashboard,
-              ),
-            TextButton(
-              onPressed: _logout,
-              child: Text(
-                'Logout',
-                style: TextStyle(color: primaryTextColor),
-              ),
+          IconButton(
+            icon: Icon(
+              darkMode ? Icons.light_mode : Icons.dark_mode,
+              color: iconColor,
             ),
-          ] else
-            Row(
-              children: [
-                TextButton(
-                  onPressed: _login,
-                  child: Text(
-                    'Masuk',
-                    style: TextStyle(color: primaryTextColor),
-                  ),
-                ),
-                TextButton(
-                  onPressed: _register,
-                  child: Text(
-                    'Daftar',
-                    style: TextStyle(
-                        color: primaryTextColor, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
+            onPressed: _toggleTheme,
+            tooltip: 'Ganti Tema',
+          ),
           const SizedBox(width: 8),
         ],
       ),
+
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -544,150 +970,148 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ),
             ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: adminOnline ? Colors.green : Colors.red,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  adminOnline ? "Online" : "Offline",
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-              ),
-              const SizedBox(width: 10),
-              FloatingActionButton(
-                heroTag: "MenuBtn",
-                backgroundColor: Colors.blue,
-                child: Icon(contactOpen ? Icons.close : Icons.support_agent),
-                onPressed: () {
-                  setState(() {
-                    contactOpen = !contactOpen;
-                    contactOpen
-                        ? popupController.forward()
-                        : popupController.reverse();
-                  });
-                },
-              ),
-            ],
+          FloatingActionButton(
+            heroTag: "MenuBtn",
+            backgroundColor: Colors.blueAccent, // Tetap biru agar kontras
+            child: Icon(contactOpen ? Icons.close : Icons.support_agent),
+            onPressed: () {
+              setState(() {
+                contactOpen = !contactOpen;
+                contactOpen
+                    ? popupController.forward()
+                    : popupController.reverse();
+              });
+            },
           ),
         ],
       ),
+
+      // BODY (Konten yang bisa discroll)
       body: Stack(
         children: [
-          Positioned.fill(
-            child: Image.asset("assets/leozien.jpeg",
-                fit: BoxFit.cover, colorBlendMode: BlendMode.darken),
-          ),
-          Container(color: Colors.black.withOpacity(0.4)),
+          // Background (Solid Hitam / Putih)
+          Container(color: backgroundColor),
+
           FadeTransition(
             opacity: fadeAnimation,
-            child: ValueListenableBuilder<List<Product>>(
-              valueListenable: widget.productManager.productsNotifier,
-              builder: (context, products, child) {
+            child: StreamBuilder<List<Product>>(
+              // ✅ 3. MENGGUNAKAN STREAMBUILDER (REAL-TIME FIREBASE)
+              stream: _firestoreService.getProducts(),
+              builder: (context, snapshot) {
+                // Loading State
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                // Error State
+                if (snapshot.hasError) {
+                  return Center(
+                      child: Text("Terjadi Kesalahan: ${snapshot.error}",
+                          style: TextStyle(color: secondaryTextColor)));
+                }
+
+                // Ambil Data Produk (Data Real dari Firebase)
+                final allProducts = snapshot.data ?? [];
+
+                // ✅ 4. LOGIKA FILTER & PENCARIAN (LOKAL) DI SINI
+                List<Product> displayProducts = allProducts.where((p) {
+                  return p.name
+                      .toLowerCase()
+                      .contains(searchQuery.trim().toLowerCase());
+                }).toList();
+
+                if (_sortOrder == 'lowest') {
+                  displayProducts.sort((a, b) => a.price.compareTo(b.price));
+                } else if (_sortOrder == 'highest') {
+                  displayProducts.sort((a, b) => b.price.compareTo(a.price));
+                }
+
                 return SingleChildScrollView(
-                  padding: const EdgeInsets.only(
-                      top: kToolbarHeight + 20, left: 16, right: 16),
+                  controller: _scrollController,
+                  padding: const EdgeInsets.only(top: 20, left: 16, right: 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // SEARCH & REKBER
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: _isDarkMode
-                              ? Colors.black.withOpacity(0.7)
-                              : Colors.white.withOpacity(0.9),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: searchBarBorderColor),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            TextField(
-                              style: TextStyle(
-                                  color: primaryTextColor, fontSize: 14),
-                              decoration: InputDecoration(
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                    vertical: 8.0, horizontal: 10.0),
-                                filled: true,
-                                fillColor: searchBarFillColor,
-                                hintText: "Cari Game atau Voucher",
-                                hintStyle: TextStyle(
-                                    color: searchBarHintColor, fontSize: 14),
-                                prefixIcon: Icon(Icons.search,
-                                    color: searchBarHintColor, size: 20),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  borderSide: BorderSide.none,
-                                ),
+                      // --- LAYOUT TOMBOL ---
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // KIRI: Rekber & Bengkel (Menggunakan Tombol Kotak Dinamis)
+                          Row(
+                            children: [
+                              _buildActionButton(
+                                  '🤝 REKBER',
+                                  _showRekberOptions,
+                                  actionBtnColor,
+                                  actionBtnTextColor),
+                              const SizedBox(width: 10),
+                              _buildActionButton(
+                                  '⚙️ BENGKEL',
+                                  _showBengkelOptions,
+                                  actionBtnColor,
+                                  actionBtnTextColor),
+                            ],
+                          ),
+
+                          // KANAN: Tombol Filter (Tetap Biru)
+                          InkWell(
+                            onTap: _showSortDialog,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.blueAccent,
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              onChanged: (v) => setState(() => searchQuery = v),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.filter_list,
+                                      color: Colors.white, size: 16),
+                                  SizedBox(width: 6),
+                                  Text("Filter Harga",
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12)),
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                _buildTextButton('🤝 REKENING BERSAMA',
-                                    _showRekberOptions, primaryTextColor),
-                                const SizedBox(width: 20),
-                                _buildTextButton('⚙️ BENGKEL MLBB',
-                                    _showBengkelOptions, primaryTextColor),
-                              ],
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
 
-                      // WELCOME
+                      const SizedBox(height: 20),
+
+                      // WELCOME TEXT
                       Text(welcomeMessage,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white)),
-                      Text(today,
-                          style: const TextStyle(color: Colors.white70)),
+                              color: primaryTextColor)),
+                      Text(today, style: TextStyle(color: secondaryTextColor)),
                       const SizedBox(height: 15),
 
-                      // PROMO
+                      // PROMO BANNER
                       Text("Hot Promo 🔥",
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white)),
+                              color: primaryTextColor)),
                       const SizedBox(height: 8),
-
-                      // --- BAGIAN YANG DIUPDATE (Instagram Feed Style) ---
                       SizedBox(
-                        height:
-                            280, // 1. Tinggi diperbesar agar jadi Kotak Besar
+                        height: 180,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           itemCount: promoImages.length,
                           itemBuilder: (context, index) {
                             return Container(
-                              width:
-                                  280, // 2. Lebar disamakan dengan Tinggi (Rasio 1:1)
-                              margin: const EdgeInsets.only(
-                                  right: 15), // Jarak antar foto
+                              width: 280,
+                              margin: const EdgeInsets.only(right: 15),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(15),
                                 boxShadow: [
-                                  // Efek bayangan agar terlihat timbul
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
+                                    color: Colors.black.withValues(alpha: 0.1),
                                     blurRadius: 5,
                                     offset: const Offset(0, 3),
                                   ),
@@ -697,13 +1121,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 borderRadius: BorderRadius.circular(15),
                                 child: Image.asset(
                                   promoImages[index],
-                                  // 3. BoxFit.cover: Gambar akan mengisi penuh kotak secara proporsional (tidak gepeng)
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, __, ___) => Container(
-                                    color: Colors.grey.shade800,
-                                    child: const Center(
+                                    color: darkMode
+                                        ? Colors.white12
+                                        : Colors.grey.shade300,
+                                    child: Center(
                                       child: Icon(Icons.broken_image,
-                                          color: Colors.white54),
+                                          color: secondaryTextColor),
                                     ),
                                   ),
                                 ),
@@ -712,126 +1137,253 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           },
                         ),
                       ),
-                      // ----------------------------------------------------
-                      const SizedBox(height: 10),
-                      Text("Katalog Produk 🎮",
-                          style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white)),
-                      const SizedBox(height: 10),
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: filteredProducts.length,
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 0.78,
-                        ),
-                        itemBuilder: (context, index) {
-                          final p = filteredProducts[index];
-                          final liked =
-                              widget.appState.value.wishlist.contains(p.id);
+                      const SizedBox(height: 20),
 
-                          return GestureDetector(
-                            onTap: () {
-                              // TAMPILKAN DETAIL DIALOG
-                              showDialog(
-                                context: context,
-                                builder: (_) => DetailDialog(
-                                  product: p,
-                                  appState: widget.appState,
-                                  onAppStateChanged: widget.onAppStateChanged,
-                                  currency: widget.currency,
-                                ),
-                              );
-                            },
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.white24),
-                                color: cardColor,
-                              ),
-                              child: Column(
+                      // KATALOG PRODUK
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Katalog Produk 🎮",
+                              style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: primaryTextColor)),
+                          Text("${displayProducts.length} Produk",
+                              style: TextStyle(
+                                  color: secondaryTextColor, fontSize: 12)),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      // GRID PRODUK (DATA DARI FIREBASE)
+                      displayProducts.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.all(40),
+                              child: Center(
+                                  child: Column(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Expanded(
-                                      child: ClipRRect(
-                                          borderRadius:
-                                              const BorderRadius.vertical(
-                                                  top: Radius.circular(12)),
-                                          child: Image.asset(p.image,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error,
-                                                      stackTrace) =>
-                                                  Container(
-                                                      color: Colors.grey,
-                                                      child: const Center(
-                                                          child: Icon(
-                                                              Icons.error)))))),
-                                  Padding(
-                                    padding: const EdgeInsets.all(6),
+                                  Icon(Icons.search_off,
+                                      size: 50, color: secondaryTextColor),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                      allProducts.isEmpty
+                                          ? "Belum ada produk dari server.\nLogin Admin untuk menambah."
+                                          : "Produk tidak ditemukan.",
+                                      textAlign: TextAlign.center,
+                                      style:
+                                          TextStyle(color: secondaryTextColor)),
+                                ],
+                              )))
+                          : GridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: displayProducts.length,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 12,
+                                childAspectRatio: 0.75,
+                              ),
+                              itemBuilder: (context, index) {
+                                final p = displayProducts[index];
+                                final liked = widget.appState.value.wishlist
+                                    .contains(p.id);
+
+                                return GestureDetector(
+                                  onTap: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (_) => DetailDialog(
+                                        product: p,
+                                        appState: widget.appState,
+                                        onAppStateChanged:
+                                            widget.onAppStateChanged,
+                                        currency: widget.currency,
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                          color: darkMode
+                                              ? Colors.white12
+                                              : Colors.grey.shade300),
+                                      color: cardColor,
+                                      boxShadow: [
+                                        if (!darkMode)
+                                          BoxShadow(
+                                              color: Colors.grey.shade200,
+                                              blurRadius: 5)
+                                      ],
+                                    ),
                                     child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
                                       children: [
-                                        Text(p.name,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                color: primaryTextColor)),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                                widget.currency.format(p.price),
-                                                style: const TextStyle(
-                                                    fontSize: 12,
-                                                    color: Colors.greenAccent)),
-                                            GestureDetector(
-                                              onTap: () {
-                                                setState(() {
-                                                  liked
-                                                      ? widget.appState.value
-                                                          .wishlist
-                                                          .remove(p.id)
-                                                      : widget.appState.value
-                                                          .wishlist
-                                                          .add(p.id);
-                                                  widget.onAppStateChanged();
-                                                });
-                                              },
-                                              child: Icon(
-                                                  liked
-                                                      ? Icons.favorite
-                                                      : Icons.favorite_border,
-                                                  size: 18,
-                                                  color: liked
-                                                      ? Colors.red
-                                                      : primaryTextColor),
-                                            )
-                                          ],
+                                        Expanded(
+                                          child: Stack(
+                                            children: [
+                                              Positioned.fill(
+                                                child: ClipRRect(
+                                                  borderRadius:
+                                                      const BorderRadius
+                                                          .vertical(
+                                                          top: Radius.circular(
+                                                              12)),
+                                                  child: Image.asset(p.image,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (context,
+                                                              error,
+                                                              stackTrace) =>
+                                                          Container(
+                                                            color: Colors.grey,
+                                                            child: const Center(
+                                                              child: Icon(Icons
+                                                                  .broken_image),
+                                                            ),
+                                                          )),
+                                                ),
+                                              ),
+                                              // 🔥 OVERLAY JIKA SOLD OUT
+                                              if (p.isSold)
+                                                Positioned.fill(
+                                                  child: Container(
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.black
+                                                          .withValues(
+                                                              alpha: 0.7),
+                                                      borderRadius:
+                                                          const BorderRadius
+                                                              .vertical(
+                                                              top: Radius
+                                                                  .circular(
+                                                                      12)),
+                                                    ),
+                                                    child: Center(
+                                                      child: Transform.rotate(
+                                                        angle: -0.2,
+                                                        child: Container(
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal: 8,
+                                                                  vertical: 4),
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            border: Border.all(
+                                                                color:
+                                                                    Colors.red,
+                                                                width: 2),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        4),
+                                                          ),
+                                                          child: const Text(
+                                                            "SOLD OUT",
+                                                            style: TextStyle(
+                                                              color: Colors.red,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              fontSize: 12,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.all(8),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(p.name,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: primaryTextColor,
+                                                      decoration: p.isSold
+                                                          ? TextDecoration
+                                                              .lineThrough
+                                                          : null)),
+                                              const SizedBox(height: 4),
+                                              // Row Harga & Wishlist
+                                              Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  Text(
+                                                      widget.currency
+                                                          .format(p.price),
+                                                      style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: p.isSold
+                                                              ? Colors.grey
+                                                              : Colors.green)),
+
+                                                  // Ikon Wishlist (Muncul jika BELUM terjual)
+                                                  if (!p.isSold)
+                                                    GestureDetector(
+                                                      onTap: () {
+                                                        setState(() {
+                                                          liked
+                                                              ? widget
+                                                                  .appState
+                                                                  .value
+                                                                  .wishlist
+                                                                  .remove(p.id)
+                                                              : widget
+                                                                  .appState
+                                                                  .value
+                                                                  .wishlist
+                                                                  .add(p.id);
+                                                          widget
+                                                              .onAppStateChanged();
+                                                        });
+                                                      },
+                                                      child: Icon(
+                                                          liked
+                                                              ? Icons.favorite
+                                                              : Icons
+                                                                  .favorite_border,
+                                                          size: 16,
+                                                          color: liked
+                                                              ? Colors.red
+                                                              : primaryTextColor),
+                                                    )
+                                                ],
+                                              ),
+                                            ],
+                                          ),
                                         )
                                       ],
                                     ),
-                                  )
-                                ],
-                              ),
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
                       const SizedBox(height: 30),
 
-                      // FOOTER BANNER
+                      // --- PANORAMA IMAGE ---
                       Text("Pesan Sekarang!",
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white)),
+                              color: primaryTextColor)),
                       const SizedBox(height: 10),
                       Container(
                         width: double.infinity,
@@ -840,7 +1392,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.4),
+                              color: Colors.black.withValues(alpha: 0.2),
                               blurRadius: 10,
                               offset: const Offset(0, 5),
                             ),
@@ -853,17 +1405,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             fit: BoxFit.cover,
                             errorBuilder: (context, error, stackTrace) =>
                                 Container(
-                              color: Colors.blueGrey,
-                              child: const Center(
+                              color: darkMode
+                                  ? Colors.grey.shade900
+                                  : Colors.grey.shade300,
+                              child: Center(
                                 child: Text("Panorama Image",
-                                    style: TextStyle(color: Colors.white70)),
+                                    style:
+                                        TextStyle(color: secondaryTextColor)),
                               ),
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(height: 50),
-                      _buildFooter(primaryTextColor, iconColor),
+
+                      // FOOTER
+                      _buildFooter(primaryTextColor, secondaryTextColor),
                     ],
                   ),
                 );
@@ -871,23 +1428,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTextButton(String text, VoidCallback onPressed, Color color) {
-    return InkWell(
-      onTap: onPressed,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4.0),
-        child: Text(
-          text,
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-        ),
       ),
     );
   }

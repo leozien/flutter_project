@@ -1,18 +1,14 @@
-// pages/login_page.dart
-
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:penjualan_mobile_legend/models/user.dart';
 
-// ✅ IMPORT BARU: Import UserManager dan User model
-import '../pages/user_manager.dart' hide User;
+import '../models/user.dart';
+import '../pages/user_manager.dart';
 import '../models/app_state.dart';
-
-// Pastikan jalur impor ini benar
 import '../models/product.dart';
-import '../pages/home_page.dart';
+// import '../pages/home_page.dart'; // ❌ SUDAH DIHAPUS KARENA TIDAK DIPAKAI
 import '../pages/register_page.dart';
+import '../pages/forgot_password_page.dart';
 import '../data/dummy_products.dart';
 
 class LoginPage extends StatefulWidget {
@@ -41,6 +37,9 @@ class _LoginPageState extends State<LoginPage>
   final TextEditingController _email = TextEditingController();
   final TextEditingController _password = TextEditingController();
 
+  bool _isPasswordVisible = false;
+  bool _rememberMe = false;
+
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -52,20 +51,13 @@ class _LoginPageState extends State<LoginPage>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _fadeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutQuad,
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutExpo,
-    ));
-    Future.delayed(const Duration(milliseconds: 200), () {
-      _controller.forward();
-    });
+    _fadeAnimation =
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutQuad);
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
+            CurvedAnimation(parent: _controller, curve: Curves.easeOutExpo));
+    Future.delayed(
+        const Duration(milliseconds: 200), () => _controller.forward());
   }
 
   @override
@@ -76,96 +68,114 @@ class _LoginPageState extends State<LoginPage>
     super.dispose();
   }
 
-  // ✅ FUNGSI LOGIN DIPERBARUI (Menjadi async)
-  void _login() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+  void _toggleTheme() {
+    setState(() {
+      widget.appState.value.isDarkMode = !widget.appState.value.isDarkMode;
+      widget.onAppStateChanged();
+    });
+  }
 
-    final enteredEmail = _email.text;
+  void _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final enteredEmail = _email.text.trim(); // Trim spasi agar aman
     final enteredPassword = _password.text;
 
-    // 1. Panggil UserManager untuk memverifikasi kredensial
-    User? loggedInUser = (await UserManager()
-        .authenticate(enteredEmail, enteredPassword)) as User?;
+    // Login ke Firebase
+    User? loggedInUser =
+        await UserManager().authenticate(enteredEmail, enteredPassword);
+
+    if (!mounted) return;
 
     if (loggedInUser != null) {
-      // Login Berhasil
-
-      // 2. Perbarui AppState dengan data pengguna yang berhasil login
-      widget.appState.value.currentUser = loggedInUser as User?;
+      widget.appState.value.currentUser = loggedInUser;
       widget.onAppStateChanged();
 
-      // 3. Tentukan rute navigasi berdasarkan role
-      String route;
+      // 🔥 LOGIKA PEMISAHAN AKUN 🔥
       String role = loggedInUser.role;
 
       if (role == 'admin') {
-        route = '/admin';
+        // KASUS 1: ADMIN
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text("Masuk ke Dashboard Admin..."),
+              backgroundColor: Colors.blue),
+        );
+        // Hapus semua riwayat halaman sebelumnya, kunci Admin di Dashboard
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/admin', (route) => false);
       } else {
-        route = '/home';
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Login ${role.toUpperCase()} Berhasil!"),
-          backgroundColor: Colors.green,
-        ),
-      );
-
-      // 4. Navigasi ke rute yang sesuai
-      if (route == '/home') {
-        _openHomePageAsUser();
-      } else {
-        Navigator.of(context).pushReplacementNamed(route);
+        // KASUS 2: USER BIASA
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text("Login Berhasil!"), backgroundColor: Colors.green),
+        );
+        // Hapus riwayat login, masuk ke Home Page User
+        Navigator.of(context)
+            .pushNamedAndRemoveUntil('/home', (route) => false);
       }
     } else {
-      // Login Gagal
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-              "Login gagal! Email atau Password salah. Silakan coba lagi atau Daftar."),
+          content: Text("Login gagal! Cek email & password."),
           backgroundColor: Colors.red,
         ),
       );
     }
   }
 
-  // Fungsi untuk Tamu: Langsung ke HomePage
   void _openHomePageAsUser() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => HomePage(
-          appState: widget.appState,
-          products: widget.productManager.productsNotifier.value,
-          productManager: widget.productManager,
-          onAppStateChanged: widget.onAppStateChanged,
-          currency: widget.currency,
-        ),
-      ),
-    );
+    // Tamu dianggap User Biasa -> Masuk Home Page via Route
+    Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isDarkMode = widget.appState.value.isDarkMode;
+    final Color bgColorStart = isDarkMode ? Colors.black : Colors.white;
+    final Color bgColorEnd =
+        isDarkMode ? const Color(0xFF121212) : const Color(0xFFF5F5F5);
+    final Color textColor = isDarkMode ? Colors.white : Colors.black;
+    final Color hintColor = isDarkMode ? Colors.white54 : Colors.black54;
+    final Color cardColor = isDarkMode
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.05);
+    final Color borderColor = isDarkMode
+        ? Colors.white.withValues(alpha: 0.2)
+        : Colors.black.withValues(alpha: 0.1);
+    final Color btnBgColor = isDarkMode ? Colors.white : Colors.black;
+    final Color btnTextColor = isDarkMode ? Colors.black : Colors.white;
+
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Image.asset("assets/leozien.jpeg", fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-            return Container(color: Colors.grey[900]);
-          }),
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  Colors.black.withOpacity(0.75),
-                  Colors.black.withOpacity(0.35),
-                ],
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
+                colors: [bgColorStart, bgColorEnd],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
+          Positioned(
+            top: 50,
+            right: 20,
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: borderColor),
+                ),
+                child: IconButton(
+                  icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode,
+                      color: textColor),
+                  onPressed: _toggleTheme,
+                  tooltip: "Ganti Tema",
+                ),
               ),
             ),
           ),
@@ -174,107 +184,182 @@ class _LoginPageState extends State<LoginPage>
               opacity: _fadeAnimation,
               child: SlideTransition(
                 position: _slideAnimation,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: SingleChildScrollView(
+                  child: Center(
                     child: Container(
-                      padding: const EdgeInsets.all(24),
-                      margin: const EdgeInsets.symmetric(horizontal: 28),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(20),
-                        border:
-                            Border.all(color: Colors.white.withOpacity(0.25)),
-                      ),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              "MASUK KE AKUN",
-                              style: TextStyle(
-                                fontSize: 26,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                letterSpacing: 1.2,
-                              ),
+                      constraints: const BoxConstraints(maxWidth: 500),
+                      margin: const EdgeInsets.symmetric(horizontal: 24),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(24),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                          child: Container(
+                            padding: const EdgeInsets.all(32),
+                            decoration: BoxDecoration(
+                              color: cardColor,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: borderColor),
                             ),
-                            const SizedBox(height: 20),
-                            TextFormField(
-                              controller: _email,
-                              style: const TextStyle(color: Colors.white),
-                              decoration: inputTheme("Username", Icons.person),
-                              validator: (value) =>
-                                  value!.isEmpty ? 'Tidak boleh kosong' : null,
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _password,
-                              obscureText: true,
-                              style: const TextStyle(color: Colors.white),
-                              decoration: inputTheme("Password", Icons.lock),
-                              validator: (value) =>
-                                  value!.isEmpty ? 'Tidak boleh kosong' : null,
-                            ),
-                            const SizedBox(height: 26),
-                            // Tombol Login
-                            ElevatedButton(
-                              style: elevatedStyle(),
-                              onPressed: _login,
-                              child: const Text(
-                                "Masuk",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-
-                            // Tombol Opsi Registrasi - DIPERBAIKI DISINI
-                            TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    // ⚠️ PERBAIKAN: Menghapus 'const' dan menambahkan parameter
-                                    // yang dibutuhkan oleh RegisterPage.
-                                    // Jika RegisterPage Anda butuh parameter lain, tambahkan di sini.
-                                    builder: (context) => RegisterPage(
-                                      appState: widget.appState,
-                                    ),
+                            child: Form(
+                              key: _formKey,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text("MASUK KE AKUN",
+                                      style: TextStyle(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.bold,
+                                          color: textColor,
+                                          letterSpacing: 1.5)),
+                                  const SizedBox(height: 30),
+                                  TextFormField(
+                                    controller: _email,
+                                    style: TextStyle(color: textColor),
+                                    decoration: inputTheme(
+                                        "Username / Email",
+                                        Icons.person,
+                                        textColor,
+                                        hintColor,
+                                        borderColor),
+                                    validator: (value) => value!.isEmpty
+                                        ? 'Tidak boleh kosong'
+                                        : null,
                                   ),
-                                );
-                              },
-                              child: const Text(
-                                "Belum punya akun? Daftar Sekarang",
-                                style: TextStyle(
-                                    color: Colors.yellowAccent,
-                                    fontWeight: FontWeight.w600),
+                                  const SizedBox(height: 20),
+                                  TextFormField(
+                                    controller: _password,
+                                    obscureText: !_isPasswordVisible,
+                                    style: TextStyle(color: textColor),
+                                    decoration: inputTheme(
+                                            "Password",
+                                            Icons.lock,
+                                            textColor,
+                                            hintColor,
+                                            borderColor)
+                                        .copyWith(
+                                      suffixIcon: IconButton(
+                                        icon: Icon(
+                                            _isPasswordVisible
+                                                ? Icons.visibility
+                                                : Icons.visibility_off,
+                                            color: textColor.withValues(
+                                                alpha: 0.6)),
+                                        onPressed: () => setState(() =>
+                                            _isPasswordVisible =
+                                                !_isPasswordVisible),
+                                      ),
+                                    ),
+                                    validator: (value) => value!.isEmpty
+                                        ? 'Tidak boleh kosong'
+                                        : null,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(children: [
+                                        SizedBox(
+                                          height: 24,
+                                          width: 24,
+                                          child: Checkbox(
+                                            value: _rememberMe,
+                                            activeColor: btnBgColor,
+                                            checkColor: btnTextColor,
+                                            side: BorderSide(
+                                                color: textColor.withValues(
+                                                    alpha: 0.5)),
+                                            onChanged: (val) => setState(() =>
+                                                _rememberMe = val ?? false),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text("Ingat Saya",
+                                            style: TextStyle(
+                                                color: textColor.withValues(
+                                                    alpha: 0.8),
+                                                fontSize: 13))
+                                      ]),
+                                      TextButton(
+                                        onPressed: () => Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                                builder: (_) =>
+                                                    ForgotPasswordPage(
+                                                        appState:
+                                                            widget.appState))),
+                                        child: Text("Lupa Kata Sandi?",
+                                            style: TextStyle(
+                                                color: textColor.withValues(
+                                                    alpha: 0.8),
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600)),
+                                      )
+                                    ],
+                                  ),
+                                  const SizedBox(height: 20),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: btnBgColor,
+                                      foregroundColor: btnTextColor,
+                                      minimumSize:
+                                          const Size(double.infinity, 54),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(14)),
+                                      elevation: 0,
+                                    ),
+                                    onPressed: _login,
+                                    child: const Text("Masuk",
+                                        style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold)),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextButton(
+                                    onPressed: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (_) => RegisterPage(
+                                                appState: widget.appState))),
+                                    child: RichText(
+                                        text: TextSpan(
+                                            text: "Belum punya akun? ",
+                                            style: TextStyle(
+                                                color: textColor.withValues(
+                                                    alpha: 0.7)),
+                                            children: [
+                                          TextSpan(
+                                              text: "Daftar",
+                                              style: TextStyle(
+                                                  color: textColor,
+                                                  fontWeight: FontWeight.bold,
+                                                  decoration:
+                                                      TextDecoration.underline))
+                                        ])),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: textColor,
+                                      minimumSize:
+                                          const Size(double.infinity, 54),
+                                      side: BorderSide(
+                                          color:
+                                              textColor.withValues(alpha: 0.3)),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(14)),
+                                    ),
+                                    onPressed: _openHomePageAsUser,
+                                    child: const Text("Cek Katalog",
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w600)),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 26),
-
-                            // Tombol Lanjutkan sebagai Tamu
-                            ElevatedButton(
-                              style: elevatedStyle().copyWith(
-                                backgroundColor: MaterialStateProperty.all(
-                                    Colors.white.withOpacity(0.15)),
-                                foregroundColor:
-                                    MaterialStateProperty.all(Colors.white),
-                              ),
-                              onPressed: _openHomePageAsUser,
-                              child: const Text(
-                                "Lanjutkan sebagai Tamu",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -288,30 +373,26 @@ class _LoginPageState extends State<LoginPage>
     );
   }
 
-  InputDecoration inputTheme(String label, IconData icon) {
+  InputDecoration inputTheme(String label, IconData icon, Color textColor,
+      Color hintColor, Color borderColor) {
     return InputDecoration(
       labelText: label,
-      prefixIcon: Icon(icon, color: Colors.white),
-      labelStyle: const TextStyle(color: Colors.white70),
+      prefixIcon: Icon(icon, color: textColor.withValues(alpha: 0.7)),
+      labelStyle: TextStyle(color: hintColor),
+      filled: true,
+      fillColor: textColor.withValues(alpha: 0.03),
       enabledBorder: OutlineInputBorder(
-        borderSide: BorderSide(color: Colors.white.withOpacity(0.4)),
-        borderRadius: BorderRadius.circular(12),
-      ),
+          borderSide: BorderSide(color: borderColor),
+          borderRadius: BorderRadius.circular(14)),
       focusedBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.white),
-        borderRadius: BorderRadius.circular(12),
-      ),
-    );
-  }
-
-  ButtonStyle elevatedStyle() {
-    return ElevatedButton.styleFrom(
-      backgroundColor: Colors.white,
-      foregroundColor: Colors.black,
-      minimumSize: const Size(double.infinity, 50),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+          borderSide: BorderSide(color: textColor, width: 1.5),
+          borderRadius: BorderRadius.circular(14)),
+      errorBorder: OutlineInputBorder(
+          borderSide: const BorderSide(color: Colors.redAccent),
+          borderRadius: BorderRadius.circular(14)),
+      focusedErrorBorder: OutlineInputBorder(
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+          borderRadius: BorderRadius.circular(14)),
     );
   }
 }

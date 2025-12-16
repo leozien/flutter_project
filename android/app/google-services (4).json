@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "750781518226",
+    "project_id": "leozien-market",
+    "storage_bucket": "leozien-market.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:750781518226:android:934476ed2b18a96497b14b",
+        "android_client_info": {
+          "package_name": "com.leozien.market"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCqFWf1xrLyDv_W1nCsCjcbiMhsFlzmHMU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

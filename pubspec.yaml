@@ -1,5 +1,5 @@
 name: penjualan_mobile_legend
-description: A Mobile Legend Account Marketplace App (No Firebase)
+description: A Mobile Legend Account Marketplace App (With Firebase)
 publish_to: "none"
 
 version: 1.0.0+1
@@ -10,6 +10,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # --- FIREBASE (WAJIB ADA) ---
+  firebase_core: ^3.15.2      # Inti untuk menghubungkan aplikasi
+  firebase_auth: ^5.3.1      # Untuk Login/Register/Lupa Password
+  cloud_firestore: ^5.4.4    # Database Produk & User
 
   # Library/UI & Features
   cupertino_icons: ^1.0.8
