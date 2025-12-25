@@ -1,46 +1,48 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
-import '../models/user.dart'
-    as model; // Alias agar tidak bentrok dengan User Firebase
+import 'package:firebase_auth/firebase_auth.dart'; 
+import 'package:cloud_firestore/cloud_firestore.dart'; // Tambahkan ini
+import '../models/user.dart' as model;
 
 class UserManager {
-  // Singleton
   static final UserManager _instance = UserManager._internal();
   factory UserManager() => _instance;
   UserManager._internal();
 
-  // Instance Firebase Auth
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance; // Instance Firestore
 
   // --- 1. LOGIN (AUTHENTICATE) ---
   Future<model.User?> authenticate(String email, String password) async {
     try {
-      // Mencoba login ke Server Google
       UserCredential credential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      // Jika berhasil, kita buat object User lokal
       final firebaseUser = credential.user;
       if (firebaseUser != null) {
-        debugPrint("Login Berhasil: ${firebaseUser.email}");
+        // Ambil data role dari Firestore, bukan dari teks email
+        DocumentSnapshot userDoc = 
+            await _firestore.collection('users').doc(firebaseUser.uid).get();
+        
+        // Ambil role dari Firestore (default ke 'user' jika data tidak ada)
+        String role = 'user';
+        if (userDoc.exists && userDoc.data() != null) {
+          final data = userDoc.data() as Map<String, dynamic>;
+          role = data['role'] ?? 'user';
+        }
 
-        // LOGIKA ADMIN SEMENTARA:
-        // Jika email mengandung "admin", kita anggap dia admin.
-        // Nanti bisa diganti dengan cek database Firestore.
-        String role = email.contains("admin") ? 'admin' : 'user';
+        debugPrint("Login Berhasil: ${firebaseUser.email} dengan role: $role");
 
         return model.User(
           email: firebaseUser.email ?? email,
-          password: "", // Tidak perlu simpan password di lokal demi keamanan
+          password: "", 
           role: role,
         );
       }
     } on FirebaseAuthException catch (e) {
       debugPrint("Login Gagal: ${e.message}");
-      // Anda bisa handle error spesifik di sini (misal: user-not-found)
     } catch (e) {
       debugPrint("Error Lain: $e");
     }
@@ -48,39 +50,50 @@ class UserManager {
   }
 
   // --- 2. REGISTER (DAFTAR BARU) ---
-  Future<bool> registerUser(String email, String password) async {
+  // Modifikasi untuk menerima data profil tambahan
+  Future<bool> registerUser(String email, String password, {String? username, String? dob, String? gender}) async {
     try {
-      // Membuat akun baru di Server Google
-      await _auth.createUserWithEmailAndPassword(
+      UserCredential credential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      debugPrint("Registrasi Berhasil di Firebase: $email");
+      final uid = credential.user?.uid;
+      if (uid != null) {
+        // Simpan data ke Firestore dengan role default 'user'
+        // Status Admin hanya bisa diubah manual lewat Firebase Console
+        await _firestore.collection('users').doc(uid).set({
+          'email': email,
+          'username': username ?? '',
+          'dob': dob ?? '',
+          'gender': gender ?? '',
+          'role': 'user', // Selalu 'user' saat pertama kali daftar
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      debugPrint("Registrasi Berhasil di Firebase & Firestore: $email");
       return true;
     } on FirebaseAuthException catch (e) {
       debugPrint("Registrasi Gagal: ${e.code} - ${e.message}");
-      // Contoh error: 'email-already-in-use', 'weak-password'
       return false;
     } catch (e) {
+      debugPrint("Error Registrasi: $e");
       return false;
     }
   }
 
-  // --- 3. RESET PASSWORD (LUPA SANDI) ---
+  // --- 3. RESET PASSWORD ---
   Future<bool> resetPassword(String email) async {
     try {
-      // Mengirim email reset password asli ke inbox user
       await _auth.sendPasswordResetEmail(email: email);
-      debugPrint("Email reset dikirim ke: $email");
       return true;
     } catch (e) {
-      debugPrint("Gagal kirim reset email: $e");
       return false;
     }
   }
 
-  // --- 4. GANTI PASSWORD (SAAT LOGIN) ---
+  // --- 4. GANTI PASSWORD ---
   Future<bool> changePassword(String newPassword) async {
     try {
       final user = _auth.currentUser;
@@ -90,7 +103,6 @@ class UserManager {
       }
       return false;
     } catch (e) {
-      debugPrint("Gagal ganti password: $e");
       return false;
     }
   }
@@ -100,13 +112,19 @@ class UserManager {
     await _auth.signOut();
   }
 
-  // Cek apakah ada user yang sedang login (Sesi Aktif)
-  model.User? getCurrentUser() {
+  // Cek sesi aktif dan ambil role terbaru dari Firestore
+  Future<model.User?> getCurrentUser() async {
     final user = _auth.currentUser;
     if (user != null) {
-      String role = (user.email != null && user.email!.contains("admin"))
-          ? 'admin'
-          : 'user';
+      DocumentSnapshot userDoc = 
+          await _firestore.collection('users').doc(user.uid).get();
+      
+      String role = 'user';
+      if (userDoc.exists && userDoc.data() != null) {
+        final data = userDoc.data() as Map<String, dynamic>;
+        role = data['role'] ?? 'user';
+      }
+      
       return model.User(email: user.email!, password: "", role: role);
     }
     return null;

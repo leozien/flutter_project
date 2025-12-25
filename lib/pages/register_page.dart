@@ -19,16 +19,14 @@ class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
   final UserManager _userManager = UserManager();
 
-  // 1. Controller untuk field yang sudah ada
+  // Controller untuk input data
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _usernameController = TextEditingController(); 
+  final _dobController = TextEditingController(); 
+  String? _selectedGender; 
 
-  // 2. Controller & Variabel baru
-  final _usernameController = TextEditingController(); // Untuk Username
-  final _dobController = TextEditingController(); // Untuk Tanggal Lahir (Teks)
-  String? _selectedGender; // Untuk Gender (Pilihan)
-
-  // List pilihan Gender
+  // List pilihan Gender (Hanya Laki-laki dan Perempuan)
   final List<String> _genderOptions = ['Laki-laki', 'Perempuan'];
 
   // Fungsi untuk menampilkan Kalender (Date Picker)
@@ -42,7 +40,6 @@ class _RegisterPageState extends State<RegisterPage> {
 
     if (picked != null) {
       setState(() {
-        // Format tanggal sederhana: DD/MM/YYYY
         _dobController.text = "${picked.day}/${picked.month}/${picked.year}";
       });
     }
@@ -52,33 +49,30 @@ class _RegisterPageState extends State<RegisterPage> {
     if (_formKey.currentState!.validate()) {
       final email = _emailController.text;
       final password = _passwordController.text;
-
-      // Ambil data baru
       final username = _usernameController.text;
       final dob = _dobController.text;
       final gender = _selectedGender;
 
-      // PENTING: Anda harus mengupdate fungsi 'registerUser' di file 'user_manager.dart'
-      // agar bisa menerima username, dob, dan gender.
-      // Contoh: await _userManager.registerUser(email, password, username, dob, gender);
-
-      // Saat ini saya panggil seperti kode lama agar tidak error di sini,
-      // tapi data barunya sudah siap di variabel di atas.
-      bool success = await _userManager.registerUser(email, password);
+      // Mengirim data ke UserManager. 
+      // Role otomatis diatur menjadi 'user' di sisi UserManager.
+      bool success = await _userManager.registerUser(
+        email, 
+        password,
+        username: username,
+        dob: dob,
+        gender: gender,
+      );
 
       if (!mounted) return;
 
       if (success) {
-        // Tampilkan info lengkap di console (untuk debugging)
-        print("Register Data: $username, $email, $dob, $gender");
-
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Registrasi Berhasil! Silakan Login.')),
         );
         Navigator.pop(context);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Email sudah terdaftar.')),
+          const SnackBar(content: Text('Registrasi Gagal. Email mungkin sudah terdaftar.')),
         );
       }
     }
@@ -86,7 +80,6 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   void dispose() {
-    // Bersihkan controller saat halaman ditutup
     _emailController.dispose();
     _passwordController.dispose();
     _usernameController.dispose();
@@ -99,14 +92,13 @@ class _RegisterPageState extends State<RegisterPage> {
     return Scaffold(
       appBar: AppBar(title: const Text("Daftar Akun Baru")),
       body: SingleChildScrollView(
-        // Tambahkan Scroll agar tidak overflow saat keyboard muncul
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Form(
             key: _formKey,
             child: Column(
               children: [
-                // --- 1. Field Username ---
+                // Field Username
                 TextFormField(
                   controller: _usernameController,
                   decoration: const InputDecoration(
@@ -118,7 +110,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // --- 2. Field Email ---
+                // Field Email
                 TextFormField(
                   controller: _emailController,
                   decoration: const InputDecoration(
@@ -130,7 +122,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // --- 3. Field Password ---
+                // Field Password
                 TextFormField(
                   controller: _passwordController,
                   decoration: const InputDecoration(
@@ -143,22 +135,21 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // --- 4. Field Tanggal Lahir (Read Only + DatePicker) ---
+                // Field Tanggal Lahir (Read Only)
                 TextFormField(
                   controller: _dobController,
-                  readOnly: true, // Tidak bisa diketik manual
+                  readOnly: true, 
                   decoration: const InputDecoration(
                       labelText: 'Tanggal Lahir',
                       prefixIcon: Icon(Icons.calendar_today),
                       border: OutlineInputBorder(),
                       hintText: 'DD/MM/YYYY'),
-                  onTap: () =>
-                      _selectDate(context), // Buka kalender saat diklik
+                  onTap: () => _selectDate(context),
                   validator: (v) => v!.isEmpty ? 'Pilih tanggal lahir' : null,
                 ),
                 const SizedBox(height: 16),
 
-                // --- 5. Field Gender (Dropdown) ---
+                // Field Gender (Dropdown)
                 DropdownButtonFormField<String>(
                   value: _selectedGender,
                   decoration: const InputDecoration(
@@ -181,7 +172,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
                 const SizedBox(height: 24),
 
-                // --- Tombol Daftar ---
+                // Tombol Daftar
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(

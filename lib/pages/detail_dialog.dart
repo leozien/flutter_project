@@ -1,3 +1,4 @@
+import 'dart:ui'; // 🔥 PENTING: Import ini untuk efek Blur
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -27,13 +28,142 @@ class DetailDialog extends StatefulWidget {
 
 class _DetailDialogState extends State<DetailDialog> {
   final FirestoreService _firestoreService = FirestoreService();
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
   bool _isProcessing = false;
 
-  // --- LOGIKA ADD TO CART (TETAP BUTUH LOGIN) ---
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  // Mengambil daftar gambar (Gabungan gambar utama + slider spesifikasi)
+  List<String> get _productImages {
+    if (widget.product.images.isNotEmpty) {
+      return widget.product.images;
+    }
+    // Default fallback jika tidak ada gambar tambahan
+    return [widget.product.image];
+  }
+
+  // --- LOGIKA TOMBOL "CEK SPESIFIKASI" (POPUP + BLUR) ---
+  void _showFullSpecsGallery() {
+    final images = _productImages;
+    final isDarkMode = widget.appState.value.isDarkMode;
+    
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.2), // Warna latar transparan
+      builder: (ctx) => Stack(
+        children: [
+          // 1. EFEK BLUR (BURAM) DI BELAKANG
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), // Kekuatan Blur
+              child: Container(
+                color: Colors.transparent,
+              ),
+            ),
+          ),
+          
+          // 2. DIALOG POPUP (UKURAN SAMA SEPERTI PRODUK)
+          Center(
+            child: Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              insetPadding: const EdgeInsets.all(20), // Padding agar tidak fullscreen
+              backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600), // Batas ukuran
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Header: Judul & Tombol Close
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          "Spesifikasi Lengkap",
+                          style: TextStyle(
+                            fontSize: 18, 
+                            fontWeight: FontWeight.bold,
+                            color: isDarkMode ? Colors.white : Colors.black
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => Navigator.pop(ctx),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.close, 
+                              size: 20, 
+                              color: isDarkMode ? Colors.white : Colors.black
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Divider(color: Colors.grey.withOpacity(0.3)),
+                    const SizedBox(height: 10),
+
+                    // List Gambar (Scrollable)
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: images.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 15),
+                        itemBuilder: (context, index) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Gambar ${index + 1}",
+                                style: TextStyle(
+                                  color: isDarkMode ? Colors.white70 : Colors.black54, 
+                                  fontSize: 12
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: InteractiveViewer( // Fitur Zoom
+                                  panEnabled: true, 
+                                  minScale: 1.0,
+                                  maxScale: 4.0,
+                                  child: Image.asset(
+                                    images[index],
+                                    fit: BoxFit.contain,
+                                    width: double.infinity,
+                                    errorBuilder: (ctx, err, stack) => Container(
+                                      height: 150,
+                                      color: Colors.grey[300],
+                                      child: const Center(child: Icon(Icons.broken_image)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- LOGIKA ADD TO CART ---
   void _addToCart() {
     final user = widget.appState.value.currentUser;
-
-    // 🔒 PENGAMAN: Hanya User Login yang boleh masuk keranjang
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -69,30 +199,24 @@ class _DetailDialogState extends State<DetailDialog> {
     }
   }
 
-  // --- LOGIKA BELI SEKARANG (BISA TAMU) ---
+  // --- LOGIKA BELI SEKARANG ---
   Future<void> _buyNow() async {
     final user = widget.appState.value.currentUser;
-
     setState(() => _isProcessing = true);
 
     try {
-      // 1. Tentukan Identitas Pembeli
       String userId;
       String userName;
 
       if (user != null) {
-        // Jika User Login
         userId = user.email;
         userName = user.email;
       } else {
-        // ✅ JIKA TAMU: Buat ID Sementara
         userId = "guest-${DateTime.now().millisecondsSinceEpoch}";
         userName = "Tamu (Guest)";
       }
 
-      // 2. Buat ID Pesanan Unik
       final orderId = "ORD-${DateTime.now().millisecondsSinceEpoch}";
-
       final newOrder = OrderModel(
         id: orderId,
         userId: userId,
@@ -103,10 +227,8 @@ class _DetailDialogState extends State<DetailDialog> {
         timestamp: DateTime.now(),
       );
 
-      // 3. Simpan ke Firebase (Tamu juga bisa simpan order)
       await _firestoreService.placeOrder(newOrder);
 
-      // 4. Buka WhatsApp
       const String adminNumber = "6282341361739";
       final String message = "Halo Admin, saya ingin membeli:\n"
           "Produk: ${widget.product.name}\n"
@@ -148,6 +270,9 @@ class _DetailDialogState extends State<DetailDialog> {
     final textColor = isDarkMode ? Colors.white : Colors.black;
     final subTextColor = isDarkMode ? Colors.white60 : Colors.black54;
     final borderColor = isDarkMode ? Colors.white12 : Colors.grey.shade200;
+    
+    // Ambil gambar untuk slider
+    final images = _productImages;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -160,26 +285,61 @@ class _DetailDialogState extends State<DetailDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- HEADER GAMBAR ---
+            // --- 1. HEADER GAMBAR (SLIDER) ---
             Stack(
               children: [
-                ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
-                  child: Image.asset(
-                    widget.product.image,
-                    height: 220,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (ctx, error, stack) => Container(
-                      height: 220,
-                      color: isDarkMode ? Colors.black : Colors.grey.shade200,
-                      child: Center(
-                          child: Icon(Icons.broken_image,
-                              size: 50, color: subTextColor)),
+                SizedBox(
+                  height: 250,
+                  width: double.infinity,
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                    child: PageView.builder(
+                      controller: _pageController,
+                      onPageChanged: (index) => setState(() => _currentPage = index),
+                      itemCount: images.length,
+                      itemBuilder: (context, index) {
+                        return Image.asset(
+                          images[index],
+                          fit: BoxFit.cover,
+                          errorBuilder: (ctx, error, stack) => Container(
+                            color: isDarkMode ? Colors.black : Colors.grey.shade200,
+                            child: Center(
+                                child: Icon(Icons.broken_image,
+                                    size: 50, color: subTextColor)),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
+                
+                // Indikator Titik (Hanya jika gambar > 1)
+                if (images.length > 1)
+                  Positioned(
+                    bottom: 15,
+                    left: 0,
+                    right: 0,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        images.length,
+                        (index) => AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          height: 8,
+                          width: _currentPage == index ? 20 : 8,
+                          decoration: BoxDecoration(
+                            color: _currentPage == index 
+                                ? Colors.blueAccent 
+                                : Colors.white.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // Tombol Close (Pojok Kanan Atas)
                 Positioned(
                   top: 10,
                   right: 10,
@@ -188,7 +348,7 @@ class _DetailDialogState extends State<DetailDialog> {
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.5),
+                        color: Colors.black.withOpacity(0.5),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(Icons.close,
@@ -196,7 +356,8 @@ class _DetailDialogState extends State<DetailDialog> {
                     ),
                   ),
                 ),
-                // Badge Promo
+                
+                // Badge Promo (Pojok Kiri Atas)
                 Positioned(
                   top: 10,
                   left: 10,
@@ -219,7 +380,7 @@ class _DetailDialogState extends State<DetailDialog> {
               ],
             ),
 
-            // --- KONTEN INFORMASI ---
+            // --- 2. KONTEN INFORMASI ---
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
@@ -244,6 +405,26 @@ class _DetailDialogState extends State<DetailDialog> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+
+                    const SizedBox(height: 15),
+
+                    // 🔥 TOMBOL SPESIFIKASI 🔥
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _showFullSpecsGallery,
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: const Text("CEK SPESIFIKASI LENGKAP"),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.blueAccent,
+                          side: const BorderSide(color: Colors.blueAccent),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+
                     const SizedBox(height: 16),
                     Divider(color: borderColor),
                     const SizedBox(height: 10),
@@ -258,7 +439,7 @@ class _DetailDialogState extends State<DetailDialog> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: isDarkMode
-                            ? Colors.black.withValues(alpha: 0.2)
+                            ? Colors.black.withOpacity(0.2)
                             : Colors.grey.shade50,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: borderColor),
@@ -277,7 +458,7 @@ class _DetailDialogState extends State<DetailDialog> {
               ),
             ),
 
-            // --- TOMBOL AKSI ---
+            // --- 3. TOMBOL BELI / KERANJANG ---
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -288,7 +469,6 @@ class _DetailDialogState extends State<DetailDialog> {
               ),
               child: Row(
                 children: [
-                  // Tombol Keranjang (Masih Butuh Login)
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: _addToCart,
@@ -297,7 +477,7 @@ class _DetailDialogState extends State<DetailDialog> {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: textColor,
                         side:
-                            BorderSide(color: textColor.withValues(alpha: 0.3)),
+                            BorderSide(color: textColor.withOpacity(0.3)),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
@@ -305,8 +485,6 @@ class _DetailDialogState extends State<DetailDialog> {
                     ),
                   ),
                   const SizedBox(width: 12),
-
-                  // Tombol Beli (Sekarang Terbuka untuk Tamu)
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: _isProcessing ? null : _buyNow,

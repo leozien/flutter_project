@@ -10,7 +10,7 @@ import '../pages/cart_page.dart';
 import '../pages/login_page.dart';
 import '../pages/register_page.dart';
 import '../data/dummy_products.dart';
-import '../services/firestore_service.dart'; // ✅ Import Service Firebase
+import '../services/firestore_service.dart';
 
 class HomePage extends StatefulWidget {
   final ValueNotifier<AppState> appState;
@@ -33,12 +33,12 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
-  // ✅ 1. Inisialisasi Service Firestore
   final FirestoreService _firestoreService = FirestoreService();
 
   String searchQuery = '';
   bool _isDarkMode = true;
   String _sortOrder = 'none';
+  bool _onlyAvailable = false; // 🔥 Variabel Filter Akun Tersedia
 
   late AnimationController _controller;
   late Animation<double> fadeAnimation;
@@ -96,7 +96,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
-  // --- FUNGSI URL LAUNCHER ---
   void _launchWhatsAppNumber(String number, String message) async {
     final Uri url =
         Uri.parse("https://wa.me/$number?text=${Uri.encodeComponent(message)}");
@@ -124,7 +123,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _launchWhatsAppNumber("6282341361739", message);
   }
 
-  // --- UI SORT DIALOG ---
   void _showSortDialog() {
     showModalBottomSheet(
       context: context,
@@ -178,7 +176,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  // --- FUNGSI NAVIGASI & LOGOUT ---
   void _openUserDashboard() {
     Navigator.pushNamed(context, '/user_dashboard');
   }
@@ -330,8 +327,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
             onPressed: () {
               Navigator.pop(ctx);
-
-              // 🔒 DAFTAR KODE VALID
               const List<String> validCodes = [
                 "LEOZIEN8080",
                 "LUNCTORIUM0808",
@@ -364,7 +359,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  // --- DRAWER MENU ---
   Widget _buildDrawer(BuildContext context) {
     final bool isLoggedIn = widget.appState.value.isLoggedIn;
     final bool dark = _isDarkMode;
@@ -610,7 +604,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  // --- MENU BENGKEL & REKBER ---
   void _showBengkelOptions() {
     showModalBottomSheet(
       context: context,
@@ -703,7 +696,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  // --- FOOTER ---
   Widget _buildFooterLink(String text, VoidCallback onTap, Color color) {
     return InkWell(
       onTap: onTap,
@@ -803,7 +795,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  // 🔥 FUNGSI BARU UNTUK TOMBOL KOTAK (PILL) DENGAN WARNA DINAMIS
   Widget _buildActionButton(
       String text, VoidCallback onTap, Color bgColor, Color textColor) {
     return InkWell(
@@ -812,10 +803,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
         decoration: BoxDecoration(
-          color: bgColor, // Warna background dinamis (Putih/Hitam)
+          color: bgColor,
           borderRadius: BorderRadius.circular(8),
           boxShadow: [
-            // Shadow tipis agar terlihat timbul
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.1),
               blurRadius: 3,
@@ -826,7 +816,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         child: Text(
           text,
           style: TextStyle(
-            color: textColor, // Warna teks dinamis (Hitam/Putih)
+            color: textColor,
             fontWeight: FontWeight.bold,
             fontSize: 12,
           ),
@@ -837,34 +827,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    // Definisi Warna Tema Monokrom (Hitam/Putih)
     final bool darkMode = _isDarkMode;
-
-    // Background Utama
     final Color backgroundColor = darkMode ? Colors.black : Colors.white;
-
-    // Warna Teks
     final Color primaryTextColor = darkMode ? Colors.white : Colors.black87;
     final Color secondaryTextColor = darkMode ? Colors.white70 : Colors.black54;
-
-    // Warna Card/Elemen
-    final Color cardColor = darkMode
-        ? const Color(0xFF1A1A1A) // Hitam sedikit terang
-        : Colors.white;
-
-    // Warna AppBar & SearchBar
+    final Color cardColor = darkMode ? const Color(0xFF1A1A1A) : Colors.white;
     final Color appBarColor = darkMode ? Colors.black : Colors.white;
     final Color searchBarFill =
         darkMode ? Colors.white.withValues(alpha: 0.1) : Colors.grey.shade100;
     final Color iconColor = darkMode ? Colors.white : Colors.black;
-
-    // 🔥 WARNA TOMBOL DINAMIS (REKBER & BENGKEL)
-    // Jika Dark Mode (BG Hitam) -> Tombol Putih
-    // Jika Light Mode (BG Putih) -> Tombol Hitam
     final Color actionBtnColor = darkMode ? Colors.white : Colors.black;
     final Color actionBtnTextColor = darkMode ? Colors.black : Colors.white;
 
-    // Pesan sapaan
     String today = DateFormat('EEEE, d MMMM y', 'id_ID').format(DateTime.now());
     String greetingHour = DateFormat('HH').format(DateTime.now()).toString();
     String welcomeMessage;
@@ -880,30 +854,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return Scaffold(
       extendBodyBehindAppBar: false,
       drawer: _buildDrawer(context),
-
-      // --- HEADER TETAP (APPBAR) ---
       appBar: AppBar(
         backgroundColor: appBarColor,
         elevation: 0,
         titleSpacing: 0,
-        // Gunakan iconTheme agar tombol back/drawer mengikuti warna tema
         iconTheme: IconThemeData(color: iconColor),
-
-        // TITLE BERISI ROW: TEKS + SEARCH BAR
         title: Row(
           children: [
-            // 1. Teks "LEOZIEN"
             Text(
               "LEOZIEN",
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: primaryTextColor, // Ikuti tema
+                color: primaryTextColor,
               ),
             ),
             const SizedBox(width: 10),
-
-            // 2. Search Bar
             Expanded(
               child: Container(
                 height: 40,
@@ -912,7 +878,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: TextField(
-                  // Menambahkan cursorColor agar kursor terlihat di background putih/hitam
                   cursorColor: primaryTextColor,
                   style: TextStyle(color: primaryTextColor, fontSize: 14),
                   textAlignVertical: TextAlignVertical.center,
@@ -933,8 +898,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ],
         ),
-
-        // 3. Tombol Kanan (Cart & Dark Mode)
         actions: [
           IconButton(
             icon: Icon(Icons.shopping_cart, color: iconColor),
@@ -952,7 +915,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           const SizedBox(width: 8),
         ],
       ),
-
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -972,7 +934,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           FloatingActionButton(
             heroTag: "MenuBtn",
-            backgroundColor: Colors.blueAccent, // Tetap biru agar kontras
+            backgroundColor: Colors.blueAccent,
             child: Icon(contactOpen ? Icons.close : Icons.support_agent),
             onPressed: () {
               setState(() {
@@ -985,39 +947,32 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ],
       ),
-
-      // BODY (Konten yang bisa discroll)
       body: Stack(
         children: [
-          // Background (Solid Hitam / Putih)
           Container(color: backgroundColor),
-
           FadeTransition(
             opacity: fadeAnimation,
             child: StreamBuilder<List<Product>>(
-              // ✅ 3. MENGGUNAKAN STREAMBUILDER (REAL-TIME FIREBASE)
               stream: _firestoreService.getProducts(),
               builder: (context, snapshot) {
-                // Loading State
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-
-                // Error State
                 if (snapshot.hasError) {
                   return Center(
                       child: Text("Terjadi Kesalahan: ${snapshot.error}",
                           style: TextStyle(color: secondaryTextColor)));
                 }
 
-                // Ambil Data Produk (Data Real dari Firebase)
                 final allProducts = snapshot.data ?? [];
 
-                // ✅ 4. LOGIKA FILTER & PENCARIAN (LOKAL) DI SINI
+                // 🔥 LOGIKA FILTER & PENCARIAN (LOKAL) TERMASUK FILTER TERSEDIA
                 List<Product> displayProducts = allProducts.where((p) {
-                  return p.name
+                  bool matchSearch = p.name
                       .toLowerCase()
                       .contains(searchQuery.trim().toLowerCase());
+                  bool matchAvailable = _onlyAvailable ? !p.isSold : true;
+                  return matchSearch && matchAvailable;
                 }).toList();
 
                 if (_sortOrder == 'lowest') {
@@ -1032,11 +987,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // --- LAYOUT TOMBOL ---
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // KIRI: Rekber & Bengkel (Menggunakan Tombol Kotak Dinamis)
                           Row(
                             children: [
                               _buildActionButton(
@@ -1044,7 +997,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                   _showRekberOptions,
                                   actionBtnColor,
                                   actionBtnTextColor),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 8),
                               _buildActionButton(
                                   '⚙️ BENGKEL',
                                   _showBengkelOptions,
@@ -1052,37 +1005,51 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                   actionBtnTextColor),
                             ],
                           ),
-
-                          // KANAN: Tombol Filter (Tetap Biru)
-                          InkWell(
-                            onTap: _showSortDialog,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.blueAccent,
-                                borderRadius: BorderRadius.circular(8),
+                          Row(
+                            children: [
+                              // 🔥 TOMBOL FILTER TERSEDIA
+                              FilterChip(
+                                label: const Text("Tersedia",
+                                    style: TextStyle(fontSize: 11)),
+                                selected: _onlyAvailable,
+                                onSelected: (val) =>
+                                    setState(() => _onlyAvailable = val),
+                                selectedColor: Colors.green.withOpacity(0.2),
+                                checkmarkColor: Colors.green,
+                                padding: EdgeInsets.zero,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
                               ),
-                              child: const Row(
-                                children: [
-                                  Icon(Icons.filter_list,
-                                      color: Colors.white, size: 16),
-                                  SizedBox(width: 6),
-                                  Text("Filter Harga",
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12)),
-                                ],
+                              const SizedBox(width: 8),
+                              // TOMBOL FILTER HARGA
+                              InkWell(
+                                onTap: _showSortDialog,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blueAccent,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Row(
+                                    children: [
+                                      Icon(Icons.filter_list,
+                                          color: Colors.white, size: 14),
+                                      SizedBox(width: 4),
+                                      Text("Harga",
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 11)),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
                         ],
                       ),
-
                       const SizedBox(height: 20),
-
-                      // WELCOME TEXT
                       Text(welcomeMessage,
                           style: TextStyle(
                               fontSize: 24,
@@ -1090,8 +1057,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               color: primaryTextColor)),
                       Text(today, style: TextStyle(color: secondaryTextColor)),
                       const SizedBox(height: 15),
-
-                      // PROMO BANNER
                       Text("Hot Promo 🔥",
                           style: TextStyle(
                               fontSize: 18,
@@ -1138,8 +1103,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ),
                       ),
                       const SizedBox(height: 20),
-
-                      // KATALOG PRODUK
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -1154,8 +1117,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ],
                       ),
                       const SizedBox(height: 10),
-
-                      // GRID PRODUK (DATA DARI FIREBASE)
                       displayProducts.isEmpty
                           ? Padding(
                               padding: const EdgeInsets.all(40),
@@ -1245,7 +1206,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                                           )),
                                                 ),
                                               ),
-                                              // 🔥 OVERLAY JIKA SOLD OUT
                                               if (p.isSold)
                                                 Positioned.fill(
                                                   child: Container(
@@ -1287,7 +1247,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                                               fontWeight:
                                                                   FontWeight
                                                                       .bold,
-                                                              fontSize: 12,
+                                                              fontSize: 10,
                                                             ),
                                                           ),
                                                         ),
@@ -1309,7 +1269,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                   style: TextStyle(
-                                                      fontSize: 12,
+                                                      fontSize: 10,
                                                       fontWeight:
                                                           FontWeight.bold,
                                                       color: primaryTextColor,
@@ -1318,7 +1278,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                                               .lineThrough
                                                           : null)),
                                               const SizedBox(height: 4),
-                                              // Row Harga & Wishlist
                                               Row(
                                                 mainAxisAlignment:
                                                     MainAxisAlignment
@@ -1328,14 +1287,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                                       widget.currency
                                                           .format(p.price),
                                                       style: TextStyle(
-                                                          fontSize: 11,
+                                                          fontSize: 9,
                                                           fontWeight:
                                                               FontWeight.bold,
                                                           color: p.isSold
                                                               ? Colors.grey
                                                               : Colors.green)),
-
-                                                  // Ikon Wishlist (Muncul jika BELUM terjual)
                                                   if (!p.isSold)
                                                     GestureDetector(
                                                       onTap: () {
@@ -1360,7 +1317,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                                               ? Icons.favorite
                                                               : Icons
                                                                   .favorite_border,
-                                                          size: 16,
+                                                          size: 14,
                                                           color: liked
                                                               ? Colors.red
                                                               : primaryTextColor),
@@ -1377,8 +1334,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               },
                             ),
                       const SizedBox(height: 30),
-
-                      // --- PANORAMA IMAGE ---
                       Text("Pesan Sekarang!",
                           style: TextStyle(
                               fontSize: 18,
@@ -1418,8 +1373,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ),
                       ),
                       const SizedBox(height: 50),
-
-                      // FOOTER
                       _buildFooter(primaryTextColor, secondaryTextColor),
                     ],
                   ),
